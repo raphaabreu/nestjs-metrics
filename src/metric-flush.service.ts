@@ -29,6 +29,9 @@ export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestr
         this.logger.error('Flush failed', err instanceof Error ? err.stack : String(err));
       });
     }, intervalMs);
+
+    process.once('SIGTERM', () => this.flush());
+    process.once('SIGINT', () => this.flush());
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -70,17 +73,4 @@ export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestr
       this.flushing = false;
     }
   }
-}
-
-// Dynamically apply @OnEvent('flush') if @nestjs/event-emitter is available
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { OnEvent } = require('@nestjs/event-emitter');
-  const descriptor = Object.getOwnPropertyDescriptor(MetricFlushService.prototype, 'flush');
-  if (descriptor) {
-    OnEvent('flush')(MetricFlushService.prototype, 'flush', descriptor);
-    Object.defineProperty(MetricFlushService.prototype, 'flush', descriptor);
-  }
-} catch {
-  // @nestjs/event-emitter not installed — flush is only triggered by the timer
 }

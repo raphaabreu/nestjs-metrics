@@ -1,19 +1,26 @@
-import { DynamicModule, Module } from '@nestjs/common';
-import { DiscoveryModule } from '@nestjs/core';
+import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
 import { MetricFlushService } from './metric-flush.service';
+import { MetricFlushInterceptor } from './metric-flush.interceptor';
 import { METRIC_MODULE_OPTIONS, MetricModuleOptions } from './types';
 
 @Module({})
 export class MetricModule {
   static register(options: MetricModuleOptions): DynamicModule {
+    const providers: Provider[] = [
+      { provide: METRIC_MODULE_OPTIONS, useValue: options },
+      MetricFlushService,
+    ];
+
+    if (options.flushOnRequest) {
+      providers.push({ provide: APP_INTERCEPTOR, useClass: MetricFlushInterceptor });
+    }
+
     return {
       module: MetricModule,
       global: true,
       imports: [DiscoveryModule],
-      providers: [
-        { provide: METRIC_MODULE_OPTIONS, useValue: options },
-        MetricFlushService,
-      ],
+      providers,
       exports: [MetricFlushService],
     };
   }

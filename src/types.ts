@@ -23,6 +23,7 @@ export interface MetricDestination {
 export interface MetricModuleOptions {
   destination: MetricDestination;
   flushIntervalMs?: number;
+  flushOnRequest?: boolean;
 }
 
 export const METRIC_MODULE_OPTIONS = Symbol('METRIC_MODULE_OPTIONS');

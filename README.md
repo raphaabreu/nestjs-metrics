@@ -109,7 +109,22 @@ import { CloudWatchDestination } from '@raphaabreu/nestjs-metrics/cloudwatch';
 export class AppModule {}
 ```
 
-That's it. Metrics are discovered automatically, aggregated in memory, and flushed to your destination on a timer.
+That's it. Metrics are discovered automatically, aggregated in memory, and flushed to your destination on a timer. The service also registers `SIGTERM` and `SIGINT` handlers to ensure a final flush on graceful shutdown.
+
+## Flush on Request (Lambda / Serverless)
+
+In serverless environments like AWS Lambda, the runtime may freeze the process between invocations. Any metrics accumulated during a request could be lost if they haven't been flushed before the response is sent. Enable `flushOnRequest` to flush all collected metrics after every HTTP request:
+
+```typescript
+MetricModule.register({
+  destination: new CloudWatchDestination({ namespace: 'mycompany/myapp' }),
+  flushOnRequest: true,
+})
+```
+
+This registers a global interceptor that calls `flush()` after each request completes, before the response is returned. The periodic timer still runs as a safety net, but the per-request flush ensures no data is lost to Lambda freezes.
+
+For long-running servers where the timer alone is sufficient, leave `flushOnRequest` off (the default).
 
 ## Direct Recording
 
