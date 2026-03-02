@@ -157,13 +157,13 @@ export class TaskMetricsRecorder implements IEventHandler<TaskCompletedEvent> {
 }
 ```
 
-Register the `MetricRegistry` as a provider alongside the handler:
+`MetricRegistry` is provided globally by `MetricModule`, so you only need to register your handler:
 
 ```typescript
-providers: [MetricRegistry, RunMetricsRecorder],
+providers: [TaskMetricsRecorder],
 ```
 
-The registry is automatically discovered by `MetricFlushService` — its metrics are flushed alongside standalone metric classes.
+Registries are automatically discovered by `MetricFlushService` — their metrics are flushed alongside standalone metric classes.
 
 Available factory methods: `sum()`, `statisticSet()`, `values()`. Each accepts an optional second argument for [metric options](#metric-options).
 
