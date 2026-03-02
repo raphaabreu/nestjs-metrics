@@ -1,6 +1,6 @@
 {
   "name": "@raphaabreu/nestjs-metrics",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Destination-agnostic metric collection and pre-aggregation for NestJS",
   "type": "commonjs",
   "main": "lib/index.js",
