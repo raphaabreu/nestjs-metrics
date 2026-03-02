@@ -71,3 +71,16 @@ export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestr
     }
   }
 }
+
+// Dynamically apply @OnEvent('flush') if @nestjs/event-emitter is available
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { OnEvent } = require('@nestjs/event-emitter');
+  const descriptor = Object.getOwnPropertyDescriptor(MetricFlushService.prototype, 'flush');
+  if (descriptor) {
+    OnEvent('flush')(MetricFlushService.prototype, 'flush', descriptor);
+    Object.defineProperty(MetricFlushService.prototype, 'flush', descriptor);
+  }
+} catch {
+  // @nestjs/event-emitter not installed — flush is only triggered by the timer
+}
