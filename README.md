@@ -32,7 +32,6 @@ import { StatisticSetMetric } from '@raphaabreu/nestjs-metrics';
 @Injectable()
 export class OrderValueMetric extends StatisticSetMetric {
   name = 'OrderValue';
-  unit = 'None';
 
   @OnEvent('order-placed')
   onOrderPlaced(event: OrderPlacedEvent) {
@@ -66,7 +65,6 @@ import { SumMetric } from '@raphaabreu/nestjs-metrics';
 @EventsHandler(OrderPlacedEvent)
 export class RequestCountMetric extends SumMetric implements IEventHandler<OrderPlacedEvent> {
   name = 'RequestCount';
-  unit = 'Count';
 
   handle(event: OrderPlacedEvent) {
     this.record(1, { country: event.country });
@@ -126,6 +124,49 @@ This registers a global interceptor that calls `flush()` after each request comp
 
 For long-running servers where the timer alone is sufficient, leave `flushOnRequest` off (the default).
 
+## MetricRegistry (zero-boilerplate)
+
+When you have many metrics in a single handler, defining a class per metric can be verbose. `MetricRegistry` is an injectable factory that creates metrics inline — no subclassing needed:
+
+```typescript
+import { EventsHandler, IEventHandler } from '@nestjs/cqrs';
+import { MetricRegistry } from '@raphaabreu/nestjs-metrics';
+
+@EventsHandler(TaskCompletedEvent)
+export class TaskMetricsRecorder implements IEventHandler<TaskCompletedEvent> {
+  private readonly itemsProcessed = this.metrics.sum('ItemsProcessed');
+  private readonly processingTime = this.metrics.statisticSet('ProcessingTime');
+  private readonly taskSuccess = this.metrics.sum('TaskSuccess');
+  private readonly taskFailure = this.metrics.sum('TaskFailure');
+  private readonly payloadSize = this.metrics.statisticSet('PayloadSize');
+
+  constructor(private readonly metrics: MetricRegistry) {}
+
+  handle(event: TaskCompletedEvent): void {
+    const labels = { queue: event.queue };
+
+    this.itemsProcessed.record(event.itemCount, labels);
+    this.processingTime.record(event.durationMs, labels);
+    this.taskSuccess.record(event.status === 'completed' ? 1 : 0, labels);
+    this.taskFailure.record(event.status === 'failed' ? 1 : 0, labels);
+
+    if (event.payloadBytes !== undefined) {
+      this.payloadSize.record(event.payloadBytes, labels);
+    }
+  }
+}
+```
+
+Register the `MetricRegistry` as a provider alongside the handler:
+
+```typescript
+providers: [MetricRegistry, RunMetricsRecorder],
+```
+
+The registry is automatically discovered by `MetricFlushService` — its metrics are flushed alongside standalone metric classes.
+
+Available factory methods: `sum()`, `statisticSet()`, `values()`. Each accepts an optional second argument for [metric options](#metric-options).
+
 ## Direct Recording
 
 While the event-listener pattern above is the recommended approach, you can also inject a metric and record values directly when that makes more sense for your use case:
@@ -151,7 +192,6 @@ Aggregates values into a single sum. Minimal payload, ideal for counters.
 @Injectable()
 export class ErrorCountMetric extends SumMetric {
   name = 'ErrorCount';
-  unit = 'Count';
 
   @OnEvent('error')
   onError(event: ErrorEvent) {
@@ -168,7 +208,6 @@ Tracks min, max, sum, and count. Good for averages without full distributions.
 @Injectable()
 export class LatencyMetric extends StatisticSetMetric {
   name = 'Latency';
-  unit = 'Milliseconds';
 
   @OnEvent('http-request')
   onRequest(event: HttpRequestEvent) {
@@ -185,7 +224,6 @@ Tracks distinct values with counts. Enables percentile and distribution analysis
 @Injectable()
 export class ResponseTimeMetric extends ValuesMetric {
   name = 'ResponseTime';
-  unit = 'Milliseconds';
 
   @OnEvent('http-request')
   onRequest(event: HttpRequestEvent) {
@@ -194,12 +232,81 @@ export class ResponseTimeMetric extends ValuesMetric {
 }
 ```
 
+## Metric Options
+
+Both metric classes and `MetricRegistry` factory methods accept optional `unit` and `namespace` metadata:
+
+```typescript
+// On a metric class
+@Injectable()
+export class LatencyMetric extends StatisticSetMetric {
+  name = 'Latency';
+  unit = 'Milliseconds';          // optional — passed to destination as metadata
+  namespace = 'mycompany/api';    // optional — overrides the destination default
+}
+
+// With MetricRegistry
+const latency = this.metrics.statisticSet('Latency', {
+  unit: 'Milliseconds',
+  namespace: 'mycompany/api',
+});
+```
+
+- **`unit`** — Destination-specific metadata. CloudWatch maps it to [StandardUnit](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDatum.html) (defaults to `'None'`). Other destinations may ignore it.
+- **`namespace`** — Overrides the destination-level namespace for this metric. CloudWatch uses it to group metrics into separate namespaces within the same destination.
+
 ## Labels
 
-Labels create separate aggregation buckets. Useful for splitting metrics by dimension:
+Labels create separate aggregation buckets. Useful for splitting metrics by dimension.
+
+### No labels
+
+Record a value without any dimensional breakdown:
+
+```typescript
+this.record(1);
+```
+
+### Single label set
+
+Record a value with one set of dimensions:
 
 ```typescript
 this.record(value, { environment: 'prod', region: 'us-east-1' });
+```
+
+### Multiple label sets
+
+Record the same value to several dimension groupings at once by passing an array. This is common when you want a single event to contribute to an overall aggregate and to per-dimension breakdowns simultaneously:
+
+```typescript
+@Injectable()
+export class OrderCountMetric extends SumMetric {
+  name = 'OrderCount';
+
+  @OnEvent('order-placed')
+  onOrderPlaced(event: OrderPlacedEvent) {
+    this.record(1, [
+      {},                                                        // overall count
+      { country: event.country },                                // per country
+      { paymentMethod: event.paymentMethod },                    // per payment method
+      { country: event.country, category: event.category },     // per country+category
+    ]);
+  }
+}
+```
+
+This is equivalent to calling `record` four times with the same value but different labels, but expressed as a single call.
+
+The same works with `MetricRegistry`:
+
+```typescript
+const orders = this.metrics.sum('OrderCount');
+
+orders.record(1, [
+  {},
+  { country: 'US' },
+]);
 ```
 
 Labels with the same keys in any order are treated as identical.
@@ -265,7 +372,7 @@ export class MyDestination implements MetricDestination {
 | `collectionMode: 'sum'` | `extends SumMetric` |
 | `collectionMode: 'statisticSet'` | `extends StatisticSetMetric` |
 | `collectionMode: 'distinctValues'` | `extends ValuesMetric` |
-| `producer.add(id, value, dimensions)` | `metric.record(value, labels)` |
+| `producer.add(id, value, dimensions)` | `metric.record(value, labels)` — labels can be a single object or an array of objects |
 | `@nestjs/event-emitter` required | Optional — use any event/listener pattern |
 | `@raphaabreu/nestjs-opensearch-structured-logger` required | Not required — uses NestJS Logger |
 

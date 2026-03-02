@@ -4,22 +4,26 @@ import { CollectedMetricData, MetricCollector } from './types';
 @Injectable()
 export abstract class Metric {
   abstract readonly name: string;
-  abstract readonly unit: string;
+  readonly unit?: string;
+  readonly namespace?: string;
 
   private readonly collectors = new Map<string, { labels: Record<string, string>; collector: MetricCollector }>();
 
   protected abstract createCollector(): MetricCollector;
 
-  record(value: number | number[], labels?: Record<string, string>): void {
-    const resolvedLabels = labels ?? {};
-    const collector = this.getCollector(resolvedLabels);
+  record(value: number | number[], labels?: Record<string, string> | Record<string, string>[]): void {
+    const labelSets = labels === undefined ? [{}] : Array.isArray(labels) ? labels : [labels];
 
-    if (Array.isArray(value)) {
-      for (const v of value) {
-        collector.collect(v);
+    for (const labelSet of labelSets) {
+      const collector = this.getCollector(labelSet);
+
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          collector.collect(v);
+        }
+      } else {
+        collector.collect(value);
       }
-    } else {
-      collector.collect(value);
     }
   }
 
@@ -30,13 +34,19 @@ export abstract class Metric {
     for (const [, entry] of this.collectors) {
       const data = entry.collector.drain();
       if (data.length > 0) {
-        results.push({
+        const item: CollectedMetricData = {
           name: this.name,
           labels: entry.labels,
-          unit: this.unit,
           data,
           collectedAt: now,
-        });
+        };
+        if (this.unit !== undefined) {
+          item.unit = this.unit;
+        }
+        if (this.namespace !== undefined) {
+          item.namespace = this.namespace;
+        }
+        results.push(item);
       }
     }
 

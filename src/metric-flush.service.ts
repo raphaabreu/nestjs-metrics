@@ -1,12 +1,14 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { Metric } from './metric';
+import { MetricRegistry } from './metric-registry';
 import { CollectedMetricData, METRIC_MODULE_OPTIONS, MetricModuleOptions } from './types';
 
 @Injectable()
 export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(MetricFlushService.name);
   private metrics: Metric[] = [];
+  private registries: MetricRegistry[] = [];
   private timer: ReturnType<typeof setInterval> | undefined;
   private flushing = false;
 
@@ -21,7 +23,14 @@ export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestr
       .filter((wrapper) => wrapper.instance instanceof Metric)
       .map((wrapper) => wrapper.instance as Metric);
 
-    this.logger.log(`Discovered ${this.metrics.length} metric(s)`);
+    this.registries = this.discoveryService
+      .getProviders()
+      .filter((wrapper) => wrapper.instance instanceof MetricRegistry)
+      .map((wrapper) => wrapper.instance as MetricRegistry);
+
+    this.logger.log(
+      `Discovered ${this.metrics.length} metric(s) and ${this.registries.length} registry(ies)`,
+    );
 
     const intervalMs = this.options.flushIntervalMs ?? 55000;
     this.timer = setInterval(() => {
@@ -57,7 +66,19 @@ export class MetricFlushService implements OnApplicationBootstrap, OnModuleDestr
           allData.push(...data);
         } catch (err) {
           this.logger.error(
-            `Error flushing metric "${(metric as Metric).name}"`,
+            `Error flushing metric "${metric.name}"`,
+            err instanceof Error ? err.stack : String(err),
+          );
+        }
+      }
+
+      for (const registry of this.registries) {
+        try {
+          const data = registry.flush();
+          allData.push(...data);
+        } catch (err) {
+          this.logger.error(
+            'Error flushing metric registry',
             err instanceof Error ? err.stack : String(err),
           );
         }

@@ -7,6 +7,7 @@ export interface CollectedMetricData {
   name: string;
   labels: Record<string, string>;
   unit?: string;
+  namespace?: string;
   data: AggregatedData[];
   collectedAt: Date;
 }
@@ -16,8 +17,17 @@ export interface MetricCollector {
   drain(): AggregatedData[];
 }
 
+export interface MetricRecorder {
+  record(value: number | number[], labels?: Record<string, string> | Record<string, string>[]): void;
+}
+
 export interface MetricDestination {
   flush(metrics: CollectedMetricData[]): Promise<void>;
+}
+
+export interface MetricOptions {
+  unit?: string;
+  namespace?: string;
 }
 
 export interface MetricModuleOptions {

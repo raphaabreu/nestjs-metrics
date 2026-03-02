@@ -1,6 +1,7 @@
 import { DiscoveryService } from '@nestjs/core';
 import { MetricFlushService } from './metric-flush.service';
 import { Metric } from './metric';
+import { MetricRegistry } from './metric-registry';
 import { MetricCollector, MetricDestination, MetricModuleOptions } from './types';
 import { SumCollector } from './collectors';
 
@@ -105,5 +106,33 @@ describe('MetricFlushService', () => {
     const flushedData = destination.flush.mock.calls[0][0];
     expect(flushedData).toHaveLength(1);
     expect(flushedData[0].data).toEqual([{ type: 'sum', value: 99 }]);
+  });
+
+  it('should discover and flush MetricRegistry instances', async () => {
+    const registry = new MetricRegistry();
+    const counter = registry.sum('RegistryCount');
+    counter.record(7);
+
+    const discoveryService = {
+      getProviders: jest.fn().mockReturnValue([
+        { instance: testMetric },
+        { instance: registry },
+      ]),
+    } as unknown as DiscoveryService;
+
+    const options: MetricModuleOptions = { destination, flushIntervalMs: 60000 };
+    service = new MetricFlushService(discoveryService, options);
+    service.onApplicationBootstrap();
+
+    testMetric.record(3);
+    await service.flush();
+
+    expect(destination.flush).toHaveBeenCalledTimes(1);
+    const flushedData = destination.flush.mock.calls[0][0];
+    expect(flushedData).toHaveLength(2);
+    expect(flushedData.map((d: { name: string }) => d.name).sort()).toEqual([
+      'RegistryCount',
+      'TestMetric',
+    ]);
   });
 });

@@ -91,6 +91,49 @@ describe('CloudWatchDestination', () => {
     expect(datum.Unit).toBe('None');
   });
 
+  it('should use default unit None when unit not provided', async () => {
+    const metrics: CollectedMetricData[] = [
+      {
+        name: 'NoUnit',
+        labels: {},
+        data: [{ type: 'sum', value: 1 }],
+        collectedAt: new Date('2024-01-01'),
+      },
+    ];
+
+    await destination.flush(metrics);
+
+    const datum = mockSend.mock.calls[0][0].input.MetricData[0];
+    expect(datum.Unit).toBe('None');
+  });
+
+  it('should group metrics by namespace', async () => {
+    const metrics: CollectedMetricData[] = [
+      {
+        name: 'M1',
+        labels: {},
+        namespace: 'custom/ns',
+        data: [{ type: 'sum', value: 1 }],
+        collectedAt: new Date('2024-01-01'),
+      },
+      {
+        name: 'M2',
+        labels: {},
+        data: [{ type: 'sum', value: 2 }],
+        collectedAt: new Date('2024-01-01'),
+      },
+    ];
+
+    await destination.flush(metrics);
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    const namespaces = mockSend.mock.calls.map(
+      (call: [{ input: { Namespace: string } }]) => call[0].input.Namespace,
+    );
+    expect(namespaces).toContain('custom/ns');
+    expect(namespaces).toContain('test/app');
+  });
+
   it('should retry with split on 413 error', async () => {
     const error = new Error('Request too large');
     error.name = '413';

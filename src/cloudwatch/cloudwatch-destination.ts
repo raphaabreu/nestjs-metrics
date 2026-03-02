@@ -26,24 +26,38 @@ export class CloudWatchDestination implements MetricDestination {
   }
 
   async flush(metrics: CollectedMetricData[]): Promise<void> {
-    const metricData: MetricDatum[] = [];
+    // Group by namespace since each PutMetricDataCommand targets a single namespace
+    const byNamespace = new Map<string, MetricDatum[]>();
 
     for (const metric of metrics) {
+      const ns = metric.namespace ?? this.namespace;
       const dimensions = this.toDimensions(metric.labels);
 
       for (const data of metric.data) {
         const datum = this.toDatum(metric.name, dimensions, metric.unit, metric.collectedAt, data);
-        metricData.push(datum);
+        let list = byNamespace.get(ns);
+        if (!list) {
+          list = [];
+          byNamespace.set(ns, list);
+        }
+        list.push(datum);
       }
     }
 
-    if (metricData.length === 0) {
+    if (byNamespace.size === 0) {
       return;
     }
 
-    const commands = this.splitBySize(metricData);
+    const commands: PutMetricDataCommand[] = [];
+    for (const [ns, metricData] of byNamespace) {
+      commands.push(...this.splitBySize(metricData, ns));
+    }
 
-    this.logger.debug(`Sending ${metricData.length} metric datum(s) in ${commands.length} command(s)`);
+    let totalDatum = 0;
+    for (const data of byNamespace.values()) {
+      totalDatum += data.length;
+    }
+    this.logger.debug(`Sending ${totalDatum} metric datum(s) in ${commands.length} command(s)`);
 
     const promise = Promise.all(commands.map((cmd) => this.send(cmd)));
     this.promiseCollector.add(promise);
@@ -90,7 +104,7 @@ export class CloudWatchDestination implements MetricDestination {
     }
   }
 
-  private splitBySize(metricData: MetricDatum[]): PutMetricDataCommand[] {
+  private splitBySize(metricData: MetricDatum[], namespace: string): PutMetricDataCommand[] {
     const commands: PutMetricDataCommand[] = [];
     const remaining = [...metricData];
 
@@ -113,7 +127,7 @@ export class CloudWatchDestination implements MetricDestination {
       commands.push(
         new PutMetricDataCommand({
           MetricData: chunk,
-          Namespace: this.namespace,
+          Namespace: namespace,
         }),
       );
     }

@@ -79,4 +79,87 @@ describe('Metric', () => {
     metric.flush();
     expect(metric.flush()).toEqual([]);
   });
+
+  it('should not include unit when not set', () => {
+    class NoUnitMetric extends Metric {
+      name = 'NoUnit';
+      protected createCollector(): MetricCollector {
+        return new SumCollector();
+      }
+    }
+    const m = new NoUnitMetric();
+    m.record(1);
+    const result = m.flush();
+    expect(result[0].unit).toBeUndefined();
+  });
+
+  it('should include namespace when set', () => {
+    class NamespacedMetric extends Metric {
+      name = 'Namespaced';
+      namespace = 'custom/ns';
+      protected createCollector(): MetricCollector {
+        return new SumCollector();
+      }
+    }
+    const m = new NamespacedMetric();
+    m.record(1);
+    const result = m.flush();
+    expect(result[0].namespace).toBe('custom/ns');
+  });
+
+  it('should not include namespace when not set', () => {
+    metric.record(1);
+    const result = metric.flush();
+    expect(result[0].namespace).toBeUndefined();
+  });
+
+  it('should record to multiple label sets from an array', () => {
+    metric.record(1, [
+      {},
+      { Exchange: 'openrtb' },
+      { Exchange: 'openrtb', Reason: 'timeout' },
+    ]);
+
+    const result = metric.flush();
+    expect(result).toHaveLength(3);
+
+    const noLabels = result.find((r) => Object.keys(r.labels).length === 0);
+    const exchangeOnly = result.find(
+      (r) => Object.keys(r.labels).length === 1 && r.labels.Exchange === 'openrtb',
+    );
+    const both = result.find(
+      (r) => Object.keys(r.labels).length === 2,
+    );
+
+    expect(noLabels!.data).toEqual([{ type: 'sum', value: 1 }]);
+    expect(exchangeOnly!.data).toEqual([{ type: 'sum', value: 1 }]);
+    expect(both!.data).toEqual([{ type: 'sum', value: 1 }]);
+  });
+
+  it('should accumulate across calls with array labels', () => {
+    metric.record(5, [{}, { Exchange: 'openrtb' }]);
+    metric.record(3, [{ Exchange: 'openrtb' }]);
+
+    const result = metric.flush();
+    expect(result).toHaveLength(2);
+
+    const noLabels = result.find((r) => Object.keys(r.labels).length === 0);
+    const exchange = result.find((r) => r.labels.Exchange === 'openrtb');
+
+    expect(noLabels!.data).toEqual([{ type: 'sum', value: 5 }]);
+    expect(exchange!.data).toEqual([{ type: 'sum', value: 8 }]);
+  });
+
+  it('should record array of values to multiple label sets', () => {
+    metric.record([2, 3], [{}, { region: 'us' }]);
+
+    const result = metric.flush();
+    expect(result).toHaveLength(2);
+
+    const noLabels = result.find((r) => Object.keys(r.labels).length === 0);
+    const region = result.find((r) => r.labels.region === 'us');
+
+    expect(noLabels!.data).toEqual([{ type: 'sum', value: 5 }]);
+    expect(region!.data).toEqual([{ type: 'sum', value: 5 }]);
+  });
 });
