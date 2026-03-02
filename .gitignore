@@ -1,0 +1,26 @@
+node_modules
+/lib
+
+# Coverage
+/coverage
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+
+# Claude Code
+.claude/

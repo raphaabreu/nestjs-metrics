@@ -1,0 +1,9 @@
+export { AggregatedData, CollectedMetricData, MetricCollector, MetricDestination, MetricModuleOptions } from './types';
+export { Metric } from './metric';
+export { SumMetric } from './sum-metric';
+export { StatisticSetMetric } from './statistic-set-metric';
+export { ValuesMetric } from './values-metric';
+export { MetricFlushService } from './metric-flush.service';
+export { MetricModule } from './metric.module';
+export { CompositeDestination } from './composite-destination';
+export { SumCollector, StatisticSetCollector, ValuesCollector } from './collectors';
