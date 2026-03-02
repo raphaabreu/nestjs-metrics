@@ -18,7 +18,11 @@ npm i @raphaabreu/nestjs-metrics @aws-sdk/client-cloudwatch
 
 ### 1. Define a metric with an event listener
 
-Each metric is an `@Injectable()` class that listens to application events and records values internally. This keeps metric logic self-contained — the services that emit events don't need to know about metrics at all.
+Each metric is an `@Injectable()` class that subscribes to application events and records values internally. This keeps metric logic self-contained — the services that produce events don't need to know about metrics at all.
+
+You can use any event mechanism. Here are two common approaches:
+
+#### Using `@nestjs/event-emitter`
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -37,20 +41,7 @@ export class OrderValueMetric extends StatisticSetMetric {
 }
 ```
 
-```typescript
-@Injectable()
-export class RequestCountMetric extends SumMetric {
-  name = 'RequestCount';
-  unit = 'Count';
-
-  @OnEvent('http-request')
-  onRequest(event: HttpRequestEvent) {
-    this.record(1, { method: event.method, status: String(event.statusCode) });
-  }
-}
-```
-
-The metric class owns the event binding, the extraction logic, and the label mapping. Your business services simply emit events as usual:
+The producing side simply emits events as usual:
 
 ```typescript
 @Injectable()
@@ -63,6 +54,41 @@ export class OrderService {
   }
 }
 ```
+
+#### Using `@nestjs/cqrs` EventBus
+
+```typescript
+import { EventsHandler, IEventHandler } from '@nestjs/cqrs';
+import { Injectable } from '@nestjs/common';
+import { SumMetric } from '@raphaabreu/nestjs-metrics';
+
+@Injectable()
+@EventsHandler(OrderPlacedEvent)
+export class RequestCountMetric extends SumMetric implements IEventHandler<OrderPlacedEvent> {
+  name = 'RequestCount';
+  unit = 'Count';
+
+  handle(event: OrderPlacedEvent) {
+    this.record(1, { country: event.country });
+  }
+}
+```
+
+The producing side publishes events through the EventBus as usual:
+
+```typescript
+@Injectable()
+export class OrderService {
+  constructor(private readonly eventBus: EventBus) {}
+
+  async placeOrder(order: Order) {
+    // ... business logic ...
+    this.eventBus.publish(new OrderPlacedEvent(order.amount, order.country));
+  }
+}
+```
+
+In both cases the metric class owns the subscription, the value extraction, and the label mapping. The producers don't reference metrics at all.
 
 ### 2. Register the module
 
